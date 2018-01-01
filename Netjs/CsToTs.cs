@@ -2328,6 +2328,54 @@ namespace Netjs
 				compilationUnit.AcceptVisitor (this);
 			}
 
+
+			class ClassifyTypeInfo
+			{
+				public bool IsSpecial;
+				public string NewName;
+			}
+
+			ClassifyTypeInfo ClassifyType(string typeName)
+			{
+				var ret = new ClassifyTypeInfo();
+
+				//change up the typename so it's in a more convenient format
+				//primitive values are handled differently by reflection (actually, basically, not at all)
+				var listMatch = ListRegex.Match(typeName);
+				if (listMatch.Success)
+				{
+					var listTypeName = listMatch.Groups[1].Value;
+					if(listTypeName == "boolean" || listTypeName == "string" || listTypeName == "number")
+						typeName = $"l|{listTypeName}";
+					else
+						typeName = $"L|{listTypeName}";
+						ret.IsSpecial = true;
+				}
+				var arrayMatch = ArrayRegex.Match(typeName);
+				if (arrayMatch.Success)
+				{
+					var arrayTypeName = arrayMatch.Groups[1].Value;
+					if(arrayTypeName == "boolean" || arrayTypeName == "string" || arrayTypeName == "number")
+						typeName = $"a|{arrayTypeName}";
+					else
+						typeName = $"A|{arrayTypeName}";
+					ret.IsSpecial = true;
+				}
+				var dictMatch = DictionaryRegex.Match(typeName);
+				if (dictMatch.Success)
+				{
+					var valueTypeName = dictMatch.Groups[2].Value;
+					if(valueTypeName == "boolean" || valueTypeName == "string" || valueTypeName == "number")
+						typeName = $"d|{dictMatch.Groups[1].Value}|{dictMatch.Groups[2].Value}";
+					else
+						typeName = $"D|{dictMatch.Groups[1].Value}|{dictMatch.Groups[2].Value}";
+				}
+
+				ret.IsSpecial = true;
+				ret.NewName = typeName;
+				return ret;
+			}
+
 			Regex ListRegex = new Regex(@"List\<(.*)\>$");
 			Regex ArrayRegex = new Regex(@"(.*)\[\]$");
 			Regex DictionaryRegex = new Regex(@"Dictionary\<([^,]*), (.*)\>$");
@@ -2382,8 +2430,7 @@ namespace Netjs
 					}
 				}
 
-				StringBuilder sb = new StringBuilder();
-				sb.Append("{");
+				List<string> infos = new List<string>();
 
 				//now add all memos as new members
 				for(int i=0;i<memos.Count;i++)
@@ -2392,44 +2439,30 @@ namespace Netjs
 					string typeName = memo.Item1;
 					string fieldName = memo.Item2;
 
-					//change up the typename so it's in a more convenient format
-					//primitive values are handled differently by reflection (actually, basically, not at all)
-					var listMatch = ListRegex.Match(typeName);
-					if (listMatch.Success)
-					{
-						var listTypeName = listMatch.Groups[1].Value;
-						if(listTypeName == "boolean" || listTypeName == "string" || listTypeName == "number")
-							typeName = $"l|{listTypeName}";
-						else
-							typeName = $"L|{listTypeName}";
-					}
-					var arrayMatch = ArrayRegex.Match(typeName);
-					if (arrayMatch.Success)
-					{
-						var arrayTypeName = arrayMatch.Groups[1].Value;
-						if(arrayTypeName == "boolean" || arrayTypeName == "string" || arrayTypeName == "number")
-							typeName = $"a|{arrayTypeName}";
-						else
-							typeName = $"A|{arrayTypeName}";
-					}
-					var dictMatch = DictionaryRegex.Match(typeName);
-					if (dictMatch.Success)
-					{
-						var valueTypeName = dictMatch.Groups[2].Value;
-						if(valueTypeName == "boolean" || valueTypeName == "string" || valueTypeName == "number")
-							typeName = $"d|{dictMatch.Groups[1].Value}|{dictMatch.Groups[2].Value}";
-						else
-							typeName = $"D|{dictMatch.Groups[1].Value}|{dictMatch.Groups[2].Value}";
-					}
+					var results = ClassifyType(typeName);
 
 					//note that we prepend a _ to the field name
 					//this is so that we dont search this object for things like `constructor` and `tostring` when reflecting in typescript..
 					//which it will find on the object, instead of valid reflection data
-					sb.Append($"\"_{fieldName}\":\"{typeName}\"");
-					if (i != memos.Count - 1)
-						sb.Append(", ");
+					infos.Add($"\"_{fieldName}\":\"{results.NewName}\"");
 				}
 
+				//add type information about ourselves--I think we can use that somehow?
+				var myTypename = typeDeclaration.Name;
+				foreach (var bt in typeDeclaration.BaseTypes)
+				{
+					var info = ClassifyType(bt.ToString());
+					if (info.IsSpecial)
+					{
+						myTypename = info.NewName;
+					}
+				}
+				infos.Insert(0,$"\"self\":\"{myTypename}\"");
+
+
+				StringBuilder sb = new StringBuilder();
+				sb.Append("{");
+				sb.Append(string.Join(",", infos));
 				sb.Append("}");
 				var value = sb.ToString();
 
@@ -2720,7 +2753,27 @@ namespace Netjs
 
 			public override void VisitTypeDeclaration (TypeDeclaration typeDeclaration)
 			{
-				base.VisitTypeDeclaration (typeDeclaration);
+				bool hasNetjsHideAttribute = typeDeclaration.Name == "NetjsHideAttribute";
+				foreach (AttributeSection a in typeDeclaration.Children.OfType<AttributeSection>())
+				{
+					foreach (var attr in a.Attributes)
+					{
+						if (attr.Type.ToString() == "NetjsHide")
+						{
+							hasNetjsHideAttribute = true;
+						}
+					}
+				}
+
+				if (hasNetjsHideAttribute)
+				{
+					//hide this type
+					typeDeclaration.Remove();
+				}
+				else
+				{
+					base.VisitTypeDeclaration(typeDeclaration);
+				}
 
 				if (typeDeclaration.ClassType == ClassType.Struct) {
 					typeDeclaration.ClassType = ClassType.Class;
