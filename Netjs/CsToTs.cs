@@ -2421,7 +2421,15 @@ namespace Netjs
 					if (field.ReturnType is PrimitiveType)
 						continue;
 
-					//enums are trouble? maybe not
+					//dont reflect enums
+					var tr = GetTypeRef(field.ReturnType);
+					if (tr is TypeDefinition)
+					{
+						var td = (TypeDefinition)tr;
+						if (td.BaseType.FullName == "System.Enum")
+							continue;
+					}
+
 
 					var declarations = field.GetChildrenByRole(Roles.Variable);
 					foreach (var decl in declarations)
