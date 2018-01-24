@@ -478,6 +478,12 @@ namespace ICSharpCode.Decompiler.ILAst
 
 			bool Simplify(ILExpression expr)
 			{
+				//as far as I can tell, 100% of these are for nullable, which we don't want
+				if (!ICSharpCode.Decompiler.Ast.AstBuilder.HackySoBadSettings.DecompileNullableOps)
+				{
+					return false;
+				}
+
 				if (expr.Code == ILCode.TernaryOp || expr.Code == ILCode.LogicAnd || expr.Code == ILCode.LogicOr) {
 					Pattern[] ps;
 					if (expr.Code != ILCode.TernaryOp) {
@@ -508,6 +514,7 @@ namespace ICSharpCode.Decompiler.ILAst
 						return true;
 					}
 				}
+
 				return false;
 			}
 

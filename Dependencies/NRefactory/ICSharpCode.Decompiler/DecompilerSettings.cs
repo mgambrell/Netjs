@@ -131,6 +131,21 @@ namespace ICSharpCode.Decompiler
 				}
 			}
 		}
+
+		bool decompileNullableOps = true;
+		
+		/// <summary>
+		/// Decompile certain nullable operations
+		/// </summary>
+		public bool DecompileNullableOps {
+			get { return decompileNullableOps; }
+			set {
+				if (decompileNullableOps != value) {
+					decompileNullableOps = value;
+					OnPropertyChanged("OptimizeNullables");
+				}
+			}
+		}
 		
 		bool usingStatement = true;
 		

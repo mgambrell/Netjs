@@ -125,6 +125,7 @@ namespace Netjs
 			context.Settings.AsyncAwait = false;
 			context.Settings.AutomaticProperties = true;
 			context.Settings.AutomaticEvents = true;
+			context.Settings.DecompileNullableOps = false;
 			context.Settings.QueryExpressions = false;
 			context.Settings.AlwaysGenerateExceptionVariableForCatchBlocks = true;
 			context.Settings.UsingDeclarations = false;

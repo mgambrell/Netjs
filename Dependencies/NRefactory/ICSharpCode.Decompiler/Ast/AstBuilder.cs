@@ -55,6 +55,9 @@ namespace ICSharpCode.Decompiler.Ast
 		SyntaxTree syntaxTree = new SyntaxTree();
 		Dictionary<string, NamespaceDeclaration> astNamespaces = new Dictionary<string, NamespaceDeclaration>();
 		bool transformationsHaveRun;
+
+		//can't figure out how to get to the settings from certain places. dont care...
+		public static DecompilerSettings HackySoBadSettings;
 		
 		public AstBuilder(DecompilerContext context)
 		{
@@ -62,6 +65,7 @@ namespace ICSharpCode.Decompiler.Ast
 				throw new ArgumentNullException("context");
 			this.context = context;
 			this.DecompileMethodBodies = true;
+			HackySoBadSettings = context.Settings;
 		}
 		
 		public static bool MemberIsHidden(MemberReference member, DecompilerSettings settings)
