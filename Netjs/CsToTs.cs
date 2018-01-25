@@ -72,6 +72,7 @@ namespace Netjs
 			yield return new ReplaceObjectEquals ();
 			yield return new InlineDelegates ();
 			yield return new OperatorDeclsToMethods ();
+			yield return new FixDuplicateMethodNames();
 			yield return new ExpandOperators ();
 			yield return new ExpandIndexers ();
 			yield return new InlineEnumMethods ();
@@ -2782,6 +2783,36 @@ namespace Netjs
 			if (!WarnedStructs.Contains(td.FullName))
 				Console.WriteLine($"type `{td.FullName}` is assigned but lacks netjs_vclone");
 			WarnedStructs.Add(td.FullName);
+		}
+
+		class FixDuplicateMethodNames : DepthFirstAstVisitor, IAstTransform
+		{
+			public void Run (AstNode compilationUnit)
+			{
+				compilationUnit.AcceptVisitor (this);
+			}
+
+			public override void VisitTypeDeclaration(TypeDeclaration typeDeclaration)
+			{
+				base.VisitTypeDeclaration(typeDeclaration);
+
+				HashSet<string> lut = new HashSet<string>();
+				foreach (var member in typeDeclaration.Members)
+				{
+					if (member is MethodDeclaration) { }
+					else continue;
+
+					var name = member.Name;
+					var oldname = name;
+					int counter = 0;
+					while(lut.Contains(name))
+						name = oldname + "_" + counter++;
+					lut.Add(name);
+
+					if (member is MethodDeclaration)
+						member.Name = name;
+				}
+			}
 		}
 
 		class FixStructAssignments : DepthFirstAstVisitor, IAstTransform
