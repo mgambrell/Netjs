@@ -49,6 +49,7 @@ namespace Netjs
 			yield return new LiftNestedClasses ();
 			//yield return new RemoveConstraints ();
 			yield return new FlattenNamespaces ();
+			yield return new FixStructAssignments();
 			yield return new StructToClass ();
 			yield return new FixGenericsThatUseObject ();
 			yield return new FixEvents ();
@@ -1518,6 +1519,21 @@ namespace Netjs
 				if (td == null || !td.IsEnum)
 					return;
 
+				//special conversion:  myenum.HasFlag(value) -> _netjs_svc.EnumHasFlag(myenum,value)
+				if (mr.MemberName == "HasFlag")
+				{
+					var newInvocation = new InvocationExpression(
+						new MemberReferenceExpression(new TypeReferenceExpression(new SimpleType("_netjs_svc")), "EnumHasFlag"),
+						new[] {
+							mr.Target.Clone(),
+							invocationExpression.Arguments.First().Clone(),
+						}
+						);
+
+					invocationExpression.ReplaceWith(newInvocation);
+
+				}
+
 				if (mr.MemberName == "GetHashCode") {
 
 					target.Remove ();
@@ -2748,6 +2764,128 @@ namespace Netjs
 				var filename = ES3Compatible ? "mscorlib.es3.ts" : "mscorlib.ts";
 				var c = new Comment (string.Format("/<reference path='{0}'/>", filename));
 				compilationUnit.InsertChildBefore (compilationUnit.FirstChild, c, Roles.Comment);
+			}
+
+		}
+
+		static HashSet<string> WarnedStructs = new HashSet<string>();
+		static void TryWarnStructs(TypeDefinition td)
+		{
+			//ignore core libraries, there's no hope for them
+			//but uhhh it's worth warning, isn't it?
+			if (td.FullName == "Enumerator") return;
+			if (td.FullName == "System.Nullable`1") return;
+			if (td.FullName.EndsWith("/Enumerator")) return;
+			if (td.FullName == "System.Collections.Generic.KeyValuePair`2") return;
+
+			if (!WarnedStructs.Contains(td.FullName))
+				Console.WriteLine($"type `{td.FullName}` is assigned but lacks netjs_vclone");
+			WarnedStructs.Add(td.FullName);
+		}
+
+		class FixStructAssignments : DepthFirstAstVisitor, IAstTransform
+		{
+			public void Run (AstNode compilationUnit)
+			{
+				compilationUnit.AcceptVisitor (this);
+			}
+
+			public override void VisitInvocationExpression(InvocationExpression invocationExpression)
+			{
+				base.VisitInvocationExpression(invocationExpression);
+
+				foreach (var arg in invocationExpression.Arguments)
+				{
+					var argtype = GetTypeDef(arg);
+					if (argtype == null) continue;
+
+					if (!argtype.IsPrimitive && argtype.IsValueType && !argtype.IsEnum)
+					{
+						if (!argtype.Methods.Any(m => m.Name == "netjs_vclone"))
+						{
+							TryWarnStructs(argtype);
+							return;
+						}
+
+						arg.ReplaceWith(
+							new InvocationExpression(
+								new MemberReferenceExpression(
+									arg.Clone(),
+									"netjs_vclone"
+								)
+							)
+						);
+					}
+				}
+			}
+
+			public override void VisitVariableInitializer(VariableInitializer variableInitializer)
+			{
+				base.VisitVariableInitializer(variableInitializer);
+
+				var mytype = GetTypeDef(variableInitializer.Initializer);
+
+				if (mytype == null) return;
+
+				//dont do it if initializer is a ctor expression (waste of effort)
+				if (variableInitializer.Initializer is Expression)
+				{
+					var initExpr = variableInitializer.Initializer as Expression;
+					if (initExpr is ObjectCreateExpression) return;
+				}
+
+				if (!mytype.IsPrimitive && mytype.IsValueType && !mytype.IsEnum)
+				{
+					if (!mytype.Methods.Any(m => m.Name == "netjs_vclone"))
+					{
+						TryWarnStructs(mytype);
+						return;
+					}
+					variableInitializer.Initializer.ReplaceWith(
+						new InvocationExpression(
+							new MemberReferenceExpression(
+								variableInitializer.Initializer.Clone(),
+								"netjs_vclone"
+							)
+						)
+					);
+				}
+
+			}
+
+			public override void VisitAssignmentExpression(AssignmentExpression assignmentExpression)
+			{
+				base.VisitAssignmentExpression(assignmentExpression);
+
+				var left = assignmentExpression.Left;
+				var right = assignmentExpression.Right;
+
+				var leftType = GetTypeDef(left);
+				var rightType = GetTypeDef(left);
+
+				if (leftType == null) return;
+				if (rightType == null) return;
+
+				//TODO - dont do it if right is a ctor expression
+
+				//it's a struct... I guess the right hand side is compatible?
+				//maybe not strictly true.. right hand side could be doing some kind of casting.. not sure how that works out
+				if (!rightType.IsPrimitive && rightType.IsValueType && !rightType.IsEnum)
+				{
+					if (!rightType.Methods.Any(m => m.Name == "netjs_vclone"))
+					{
+						TryWarnStructs(rightType);
+						return;
+					}
+					right.ReplaceWith(
+						new InvocationExpression(
+							new MemberReferenceExpression(
+								right.Clone(),
+								"netjs_vclone"
+							)
+						)
+					);
+				}
 			}
 
 		}
