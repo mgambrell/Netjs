@@ -232,7 +232,9 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 			int count = ++typeNames[proposedName];
 			if (count > 1) {
-				return proposedName + count.ToString();
+				return proposedName + 
+					"$" + //special for netjs -- really, this whole approach should be awful for everyone (locals for type iVector2 are iVector, then iVector2, which is.. collision) .. but with JS we can use $ and get away with it
+					count.ToString();
 			} else {
 				return proposedName;
 			}
