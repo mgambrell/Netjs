@@ -49,6 +49,7 @@ namespace Netjs
 			yield return new LiftNestedClasses ();
 			//yield return new RemoveConstraints ();
 			yield return new FlattenNamespaces ();
+			//yield return new ReplaceDefault (); //moved before FixStructAssignments so that FixStructAssignments can detect 'new' instead of 'new'+'default'. but I had problems with it. it SHOULD work, but I'll just handle 'default' also for now.
 			yield return new FixStructAssignments();
 			yield return new StructToClass ();
 			yield return new FixGenericsThatUseObject ();
@@ -2831,7 +2832,7 @@ namespace Netjs
 				if (variableInitializer.Initializer is Expression)
 				{
 					var initExpr = variableInitializer.Initializer as Expression;
-					if (initExpr is ObjectCreateExpression) return;
+					if (initExpr is ObjectCreateExpression || initExpr is DefaultValueExpression) return;
 				}
 
 				if (!mytype.IsPrimitive && mytype.IsValueType && !mytype.IsEnum)
@@ -2866,7 +2867,9 @@ namespace Netjs
 				if (leftType == null) return;
 				if (rightType == null) return;
 
-				//TODO - dont do it if right is a ctor expression
+				//dont do it if right is a ctor expression, it's wasted work
+				if (right is ObjectCreateExpression || right is DefaultValueExpression)
+					return;
 
 				//it's a struct... I guess the right hand side is compatible?
 				//maybe not strictly true.. right hand side could be doing some kind of casting.. not sure how that works out
@@ -2877,6 +2880,7 @@ namespace Netjs
 						TryWarnStructs(rightType);
 						return;
 					}
+
 					right.ReplaceWith(
 						new InvocationExpression(
 							new MemberReferenceExpression(
@@ -2987,18 +2991,48 @@ namespace Netjs
 
 				var ctor = GetJsConstructor (defaultValueExpression.Type);
 
-				object val = null;
+				if (ctor == "Number") defaultValueExpression.ReplaceWith(new PrimitiveExpression(0));
+				else if (ctor == "Boolean") defaultValueExpression.ReplaceWith(new PrimitiveExpression(false));
+				else
+				{
+					var ownerType = defaultValueExpression.GetParent<TypeDeclaration>();
+					if (ownerType != null)
+					{
+						var ownerTypeTPs = ownerType.TypeParameters;
+						if (ownerTypeTPs != null && ownerTypeTPs.Count > 0)
+						{
+							if (defaultValueExpression.Type is SimpleType)
+							{
+								var st = defaultValueExpression.Type as SimpleType;
+								var name = st.Identifier;
+								var tp = ownerTypeTPs.Where(otp => otp.Name == name);
+								if (tp != null)
+								{
+									//found a match between owning type's type parameter and this type name
+									//we can get the constrants to see if it's specified as class
+									//if it's class, default(T) is null.
+									//if it IS NOT, then default(T) is ? ? ?? ? ? impossible in typescript :/
+									bool hasClass = false;
+									foreach (var constraint in ownerType.Constraints.Where(c => c.TypeParameter.Identifier == name))
+										hasClass |= constraint.BaseTypes.Any(bt => ((PrimitiveType)bt).Keyword == "class");
 
-				switch (ctor) {
-				case "Number":
-					val = 0;
-					break;
-				case "Boolean":
-					val = false;
-					break;
+									if (hasClass)
+									{
+									}
+									else
+									{
+										Console.WriteLine("Trying to default(T) where T is not known to be a `class` (value type semantics will be wrong since default(T_is_a_struct) can't be done in TS)");
+									}
+
+								}
+							}
+						}
+					}
+
+					defaultValueExpression.ReplaceWith(new PrimitiveExpression(null));
+					
 				}
-
-				defaultValueExpression.ReplaceWith (new PrimitiveExpression (val));
+				
 			}
 		}
 
