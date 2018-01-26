@@ -2851,6 +2851,7 @@ namespace Netjs
 			}
 		}
 
+		//warning: there are probably a lot of cases unhandled here. theyre not extremely hard to fix
 		class FixStructAssignments : DepthFirstAstVisitor, IAstTransform
 		{
 			public void Run (AstNode compilationUnit)
@@ -2891,6 +2892,11 @@ namespace Netjs
 			{
 				base.VisitVariableInitializer(variableInitializer);
 
+				if (variableInitializer.Initializer is ArrayCreateExpression) return;
+
+				var mytr = GetTypeRef(variableInitializer.Initializer);
+				if (mytr != null && mytr.IsArray) return;
+
 				var mytype = GetTypeDef(variableInitializer.Initializer);
 
 				if (mytype == null) return;
@@ -2918,7 +2924,6 @@ namespace Netjs
 						)
 					);
 				}
-
 			}
 
 			public override void VisitAssignmentExpression(AssignmentExpression assignmentExpression)
@@ -2928,8 +2933,13 @@ namespace Netjs
 				var left = assignmentExpression.Left;
 				var right = assignmentExpression.Right;
 
+				if (right is ArrayCreateExpression) return;
+
+				var rightTypeRef = GetTypeRef(right);
+				if (rightTypeRef != null && rightTypeRef.IsArray) return;
+
 				var leftType = GetTypeDef(left);
-				var rightType = GetTypeDef(left);
+				var rightType = GetTypeDef(right);
 
 				if (leftType == null) return;
 				if (rightType == null) return;
@@ -2947,7 +2957,6 @@ namespace Netjs
 						TryWarnStructs(rightType);
 						return;
 					}
-
 					right.ReplaceWith(
 						new InvocationExpression(
 							new MemberReferenceExpression(
