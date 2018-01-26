@@ -65,7 +65,7 @@ namespace Netjs
 			yield return new PropertiesToMethods ();
 			yield return new InitializeFields ();
 			yield return new MakeSuperCtorFirst ();
-			yield return new MergeOverloads ();
+			//yield return new MergeOverloads ();
 			yield return new FixCatches ();
 			yield return new FixEmptyThrow ();
 			yield return new AnonymousInitializersNeedNames ();
@@ -73,6 +73,7 @@ namespace Netjs
 			yield return new InlineDelegates ();
 			yield return new OperatorDeclsToMethods ();
 			yield return new FixDuplicateMethodNames();
+			yield return new FixDuplicateMethodNames2();
 			yield return new ExpandOperators ();
 			yield return new ExpandIndexers ();
 			yield return new InlineEnumMethods ();
@@ -2785,6 +2786,31 @@ namespace Netjs
 			WarnedStructs.Add(td.FullName);
 		}
 
+
+		class FixDuplicateMethodNames2 : DepthFirstAstVisitor, IAstTransform
+		{
+			public static HashSet<MethodDefinition> Renamed = new HashSet<MethodDefinition>();
+
+			public void Run (AstNode compilationUnit)
+			{
+				compilationUnit.AcceptVisitor (this);
+			}
+
+			public override void VisitInvocationExpression(InvocationExpression invocationExpression)
+			{
+				base.VisitInvocationExpression(invocationExpression);
+
+				var md = GetMethodDef(invocationExpression);
+
+				if (md == null) return;
+				if (!Renamed.Contains(md)) return;
+
+				var mre = invocationExpression.Target as MemberReferenceExpression;
+				if (mre == null) return;
+				mre.MemberName = md.Name;
+			}
+		}
+
 		class FixDuplicateMethodNames : DepthFirstAstVisitor, IAstTransform
 		{
 			public void Run (AstNode compilationUnit)
@@ -2792,11 +2818,13 @@ namespace Netjs
 				compilationUnit.AcceptVisitor (this);
 			}
 
+
 			public override void VisitTypeDeclaration(TypeDeclaration typeDeclaration)
 			{
 				base.VisitTypeDeclaration(typeDeclaration);
 
 				HashSet<string> lut = new HashSet<string>();
+
 				foreach (var member in typeDeclaration.Members)
 				{
 					if (member is MethodDeclaration) { }
@@ -2805,12 +2833,20 @@ namespace Netjs
 					var name = member.Name;
 					var oldname = name;
 					int counter = 0;
-					while(lut.Contains(name))
-						name = oldname + "_" + counter++;
+					while (lut.Contains(name))
+						name = oldname + "$_$" + counter++;
 					lut.Add(name);
 
-					if (member is MethodDeclaration)
+					if (member is MethodDeclaration && name != oldname)
+					{
+						var md = member.Annotation<MethodDefinition>();
 						member.Name = name;
+						if (md != null)
+						{
+							FixDuplicateMethodNames2.Renamed.Add(md);
+							md.Name = name;
+						}
+					}
 				}
 			}
 		}
