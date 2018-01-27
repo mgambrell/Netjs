@@ -50,7 +50,6 @@ namespace Netjs
 			//yield return new RemoveConstraints ();
 			yield return new FlattenNamespaces ();
 			//yield return new ReplaceDefault (); //moved before FixStructAssignments so that FixStructAssignments can detect 'new' instead of 'new'+'default'. but I had problems with it. it SHOULD work, but I'll just handle 'default' also for now.
-			yield return new FixStructAssignments();
 			yield return new StructToClass ();
 			yield return new FixGenericsThatUseObject ();
 			yield return new FixEvents ();
@@ -107,6 +106,7 @@ namespace Netjs
 			yield return new AddReferences ();
 			yield return new NullableChecks ();
 			yield return new AccessorsToInvocations ();
+			yield return new FixStructAssignments(); //must happen after all methods and method invocations are finshed being worked out
 		}
 
 		class CallStaticCtors : DepthFirstAstVisitor, IAstTransform
