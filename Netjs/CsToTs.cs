@@ -59,6 +59,7 @@ namespace Netjs
 			yield return new RemovePrivateInterfaceOverloads ();
 			yield return new AvoidTrickyJsKeywords ();
 			yield return new AddAbstractMethodBodies ();
+			yield return new MakeStructDefaultCtor();
 			yield return new MergeCtors ();
 			yield return new EnsureAtLeastOneCtor ();
 			yield return new StaticCtorsToMethods ();
@@ -331,13 +332,30 @@ namespace Netjs
 			{
 				base.VisitMemberReferenceExpression (memberReferenceExpression);
 
-				if (memberReferenceExpression.MemberName == "HasValue") {
-					var t = GetTypeRef (memberReferenceExpression.Target);
-					if (t != null && t.FullName.StartsWith ("System.Nullable`1", StringComparison.Ordinal)) {
+				//so... sometimes we have an empty nullable, and sometimes we have null
+				//it would be better to make sure we always have an empty nullable.
+				//but this may work, and it's easier
+
+				//if (memberReferenceExpression.MemberName == "HasValue") {
+				//	var t = GetTypeRef (memberReferenceExpression.Target);
+				//	if (t != null && t.FullName.StartsWith ("System.Nullable`1", StringComparison.Ordinal)) {
+				//		var ta = memberReferenceExpression.Target;
+				//		ta.Remove ();
+				//		var n = new BinaryOperatorExpression (ta, BinaryOperatorType.InEquality, new NullReferenceExpression ());
+				//		memberReferenceExpression.ReplaceWith (n);
+				//	}
+				//}
+
+				if (memberReferenceExpression.MemberName == "HasValue")
+				{
+					var t = GetTypeRef(memberReferenceExpression.Target);
+					if (t != null && t.FullName.StartsWith("System.Nullable`1", StringComparison.Ordinal))
+					{
 						var ta = memberReferenceExpression.Target;
-						ta.Remove ();
-						var n = new BinaryOperatorExpression (ta, BinaryOperatorType.InEquality, new NullReferenceExpression ());
-						memberReferenceExpression.ReplaceWith (n);
+						var neq = new BinaryOperatorExpression(ta.Clone(), BinaryOperatorType.InEquality, new NullReferenceExpression());
+						var boolexpr = new BinaryOperatorExpression(neq, BinaryOperatorType.ConditionalAnd, memberReferenceExpression.Clone());
+						ta.Remove();
+						memberReferenceExpression.ReplaceWith(boolexpr);
 					}
 				}
 			}
@@ -399,6 +417,14 @@ namespace Netjs
 				return new PrimitiveExpression (0);
 			if (js == "Boolean")
 				return new PrimitiveExpression (false);
+
+			//for structs, use default ctor 
+			var td = GetTypeDef(returnType);
+			if (td != null && !td.IsPrimitive && td.IsValueType && !td.IsEnum)
+			{
+				return new ObjectCreateExpression(new SimpleType(td.FullName));
+			}
+
 			return new PrimitiveExpression (null);
 		}
 
@@ -3886,6 +3912,30 @@ namespace Netjs
 				}
 			}
 		}
+
+		class MakeStructDefaultCtor : DepthFirstAstVisitor, IAstTransform
+		{
+			public void Run(AstNode compilationUnit)
+			{
+				compilationUnit.AcceptVisitor(this);
+			}
+
+			public override void VisitTypeDeclaration(TypeDeclaration typeDeclaration)
+			{
+				if (typeDeclaration.ClassType != ClassType.Class)
+					return;
+
+				var td = GetTypeDef(typeDeclaration);
+				if (td != null && !td.IsPrimitive && td.IsValueType && !td.IsEnum)
+				{
+					var ctor = new ConstructorDeclaration();
+					ctor.Name = typeDeclaration.Name;
+					ctor.Body = new BlockStatement();
+					typeDeclaration.Members.Add(ctor);
+				}
+			}
+		}
+
 
 		class MergeCtors : DepthFirstAstVisitor, IAstTransform
 		{
