@@ -2891,6 +2891,9 @@ namespace Netjs
 
 				foreach (var arg in invocationExpression.Arguments)
 				{
+					var argtr = GetTypeRef(arg);
+					if (argtr != null && argtr.IsArray) return;
+
 					var argtype = GetTypeDef(arg);
 					if (argtype == null) continue;
 
