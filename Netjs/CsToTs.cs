@@ -2442,7 +2442,6 @@ namespace Netjs
 				bool isGarbage = false;
 				foreach (var a in typeDeclaration.Attributes)
 				{
-					var aa = a.FirstChild.Annotation<Mono.Cecil.CustomAttribute>();
 					if (a.FirstChild.ToString() == "Serializable")
 						isSerializable = true;
 
@@ -2468,13 +2467,24 @@ namespace Netjs
 
 					//dont reflect enums
 					var tr = GetTypeRef(field.ReturnType);
-					if (tr is TypeDefinition)
+					var td = GetTypeDef(field.ReturnType);
+					if (tr != null && tr is TypeDefinition)
 					{
-						var td = (TypeDefinition)tr;
 						if (td.BaseType.FullName == "System.Enum")
 							continue;
 					}
 
+					//warning: we dont save a list of nonserialized fields
+					//that means, this can't apply to primitive types; it only excludes things from the reflection list which would otherwise be included
+					bool isNonserializedField = false;
+					foreach (var a in field.Attributes)
+					{
+						if (a.FirstChild.ToString() == "NonSerialized")
+							isNonserializedField = true;
+					}
+
+					if (isNonserializedField)
+						continue;
 
 					var declarations = field.GetChildrenByRole(Roles.Variable);
 					foreach (var decl in declarations)
