@@ -87,6 +87,7 @@ namespace Netjs
 			yield return new StringConstructorsToMethods ();
 			yield return new MakePrimitiveTypesJsTypes ();
 			yield return new AddSerializationHelpers();
+			yield return new BubbleDerivedSerializationHelpers();
 			yield return new FixIsOp ();
 			yield return new Renames ();
 			yield return new SuperPropertiesToThis ();
@@ -2323,6 +2324,14 @@ namespace Netjs
 			return td;
 		}
 
+		static TypeDefinition GetTypeDef (TypeReference tr)
+		{
+			var td = tr as TypeDefinition;
+			if (td == null && tr != null)
+				td = tr.Resolve ();
+			return td;
+		}
+
 		static TypeReference GetTypeRef (AstNode expr)
 		{
 			var td = expr.Annotation<TypeDefinition> ();
@@ -2364,6 +2373,65 @@ namespace Netjs
 			}
 
 			return null;
+		}
+
+
+		class BubbleDerivedSerializationHelpers : DepthFirstAstVisitor, IAstTransform
+		{
+			public static Dictionary<TypeDefinition, ReflectionAnnotation> Lookups = new Dictionary<TypeDefinition, ReflectionAnnotation>();
+
+			public void Run (AstNode compilationUnit)
+			{
+				compilationUnit.AcceptVisitor (this);
+			}
+
+			public override void VisitTypeDeclaration(TypeDeclaration typeDeclaration)
+			{
+				base.VisitTypeDeclaration(typeDeclaration);
+
+				//find our own reflection
+				var td = GetTypeDef(typeDeclaration);
+				if (td == null) return;
+
+				var reflection = typeDeclaration.Annotation<ReflectionAnnotation>();
+				if (reflection == null) return;
+
+				//clone it
+				var infos = new List<string>(reflection.infos); 
+
+				//find reflection in parent types
+				var tr = td.BaseType;
+				while(tr.Name != "ValueType" && tr.Name != "Object")
+				{
+					var tdParent = GetTypeDef(tr);
+					if (Lookups.ContainsKey(tdParent))
+					{
+						var parentReflection = Lookups[tdParent].infos.Where(i => !i.StartsWith("\"self"));
+						infos.AddRange(parentReflection);
+					}
+					tr = tdParent.BaseType;
+				}
+
+				//now generate the field
+				StringBuilder sb = new StringBuilder();
+				sb.Append("{");
+				sb.Append(string.Join(",", infos));
+				sb.Append("}");
+				var value = sb.ToString();
+
+				string reflectionFieldName = "__reflection";
+				var fd = new FieldDeclaration
+				{
+					Name = reflectionFieldName,
+					ReturnType = new PrimitiveType("{[id:string]:string}")
+				};
+				var expr = new PrimitiveExpression(value,value);
+				var initializer = new VariableInitializer(reflectionFieldName, expr);
+				fd.Variables.Add(initializer);
+				fd.Modifiers = Modifiers.Static | Modifiers.Protected;
+				typeDeclaration.Members.Add(fd);
+			}
+
 		}
 
 		class AddSerializationHelpers : DepthFirstAstVisitor, IAstTransform
@@ -2414,9 +2482,9 @@ namespace Netjs
 						typeName = $"d|{dictMatch.Groups[1].Value}|{dictMatch.Groups[2].Value}";
 					else
 						typeName = $"D|{dictMatch.Groups[1].Value}|{dictMatch.Groups[2].Value}";
+					ret.IsSpecial = true;
 				}
 
-				ret.IsSpecial = true;
 				ret.NewName = typeName;
 				return ret;
 			}
@@ -2520,27 +2588,19 @@ namespace Netjs
 						myTypename = info.NewName;
 					}
 				}
+
+
 				infos.Insert(0,$"\"self\":\"{myTypename}\"");
 
-
-				StringBuilder sb = new StringBuilder();
-				sb.Append("{");
-				sb.Append(string.Join(",", infos));
-				sb.Append("}");
-				var value = sb.ToString();
-
-				string reflectionFieldName = "__reflection";
-				var fd = new FieldDeclaration
-				{
-					Name = reflectionFieldName,
-					ReturnType = new PrimitiveType("{[id:string]:string}")
-				};
-				var expr = new PrimitiveExpression(value,value);
-				var initializer = new VariableInitializer(reflectionFieldName, expr);
-				fd.Variables.Add(initializer);
-				fd.Modifiers = Modifiers.Static | Modifiers.Private;
-				typeDeclaration.Members.Add(fd);
+				var ra = new ReflectionAnnotation() { infos = infos };
+				typeDeclaration.AddAnnotation(ra);
+				BubbleDerivedSerializationHelpers.Lookups[GetTypeDef(typeDeclaration)] = ra;
 			}
+		}
+
+		class ReflectionAnnotation
+		{
+			public List<string> infos = new List<string>();
 		}
 
 		class AccessorsToInvocations : DepthFirstAstVisitor, IAstTransform
