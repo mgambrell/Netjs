@@ -2533,6 +2533,10 @@ namespace Netjs
 					if (field.ReturnType is PrimitiveType)
 						continue;
 
+					//no statics
+					if (field.Modifiers.HasFlag(Modifiers.Static))
+						continue;
+
 					//dont reflect enums
 					var tr = GetTypeRef(field.ReturnType);
 					var td = GetTypeDef(field.ReturnType);
