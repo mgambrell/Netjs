@@ -2116,6 +2116,7 @@ namespace Netjs
 			"StartsWith",
 			"EndsWith",
 			"Substring",
+			"CompareTo",
 			"Trim",
 			"TrimStart",
 			"TrimEnd",
