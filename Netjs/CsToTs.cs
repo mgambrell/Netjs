@@ -3110,6 +3110,46 @@ namespace Netjs
 				}
 			}
 
+			public override void VisitMethodDeclaration(MethodDeclaration methodDeclaration)
+			{
+				bool hasNetjsHideAttribute = false;
+				foreach (AttributeSection a in methodDeclaration.Children.OfType<AttributeSection>())
+				{
+					foreach (var attr in a.Attributes)
+					{
+						if (attr.Type.ToString() == "NetjsHide")
+						{
+							hasNetjsHideAttribute = true;
+						}
+					}
+				}
+
+				if (hasNetjsHideAttribute)
+					methodDeclaration.Remove();
+				else
+					base.VisitMethodDeclaration(methodDeclaration);
+			}
+
+			public override void VisitPropertyDeclaration(PropertyDeclaration propertyDeclaration)
+			{
+				bool hasNetjsHideAttribute = false;
+				foreach (AttributeSection a in propertyDeclaration.Children.OfType<AttributeSection>())
+				{
+					foreach (var attr in a.Attributes)
+					{
+						if (attr.Type.ToString() == "NetjsHide")
+						{
+							hasNetjsHideAttribute = true;
+						}
+					}
+				}
+
+				if (hasNetjsHideAttribute)
+					propertyDeclaration.Remove();
+				else
+					base.VisitPropertyDeclaration(propertyDeclaration);
+			}
+
 			// TODO: Introduce Clone
 		}
 
